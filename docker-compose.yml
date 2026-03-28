@@ -1,0 +1,110 @@
+# version: '3.8'
+
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "50m"
+    max-file: "4"
+
+networks:
+  network-internal:
+    driver: bridge
+    internal: true
+
+  network-external:
+    driver: bridge
+
+services:
+  proxy:
+    image: nginx:1.29.7-alpine
+    restart: unless-stopped
+    ports:
+      - "${HOST_PORT:-33333}:80"
+    volumes:
+      - ./proxy/nginx.conf:/etc/nginx/nginx.conf:ro,Z
+    networks:
+      - "network-external"
+      - "network-internal"
+    depends_on:
+      - "backend"
+      - "frontend"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost/nginx_status || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging: *default-logging
+
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: "${POSTGRES_USER:-spasm_user}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-spasm_password}"
+      POSTGRES_DB: "${POSTGRES_DATABASE:-spasm_database}"
+    volumes:
+      - postgres-volume:/var/lib/postgresql/data
+    networks:
+      - "network-internal"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-spasm_user} -d ${POSTGRES_DATABASE:-spasm_database}"]
+      interval: 30s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    logging: *default-logging
+
+  backend:
+    # PRE-BUILT IMAGE (default)
+    image: docker.io/spasmnetwork/spasm-forum-server:latest
+    # LOCAL BUILD (optional)
+    # 1. Clone git repo: git clone https://github.com/spasm-network/spasm-forum-server.git ./backend/
+    # 2. Comment out the "image" line above
+    # 3. Uncomment the "build" line below:
+    # build: ./backend
+    # 4. Warning: local changes to this file will create merge conflicts when updating this git repo
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      POSTGRES_HOST: "postgres"
+      POSTGRES_PORT: "${POSTGRES_PORT:-5432}"
+      POSTGRES_DATABASE: "${POSTGRES_DATABASE:-spasm_database}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-spasm_password}"
+      POSTGRES_USER: "${POSTGRES_USER:-spasm_user}"
+    networks:
+      - "network-internal"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5000/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 40s
+    logging: *default-logging
+
+  frontend:
+    # PRE-BUILT IMAGE (default)
+    image: docker.io/spasmnetwork/spasm-forum-web:latest
+    # LOCAL BUILD (optional)
+    # 1. Clone git repo: git clone https://github.com/spasm-network/spasm-forum-web.git ./frontend/
+    # 2. Comment out the "image" line above
+    # 3. Uncomment the "build" line below:
+    # build: ./frontend
+    # 4. Warning: local changes to this file will create merge conflicts when updating this git repo
+    restart: unless-stopped
+    environment:
+      NUXT_PUBLIC_ADMINS: "${ADMINS}"
+      NUXT_PUBLIC_API_URL: "${API_URL}"
+      NUXT_API_URL_DOCKER_SSR: "http://backend:5000"
+      NUXT_PUBLIC_FAVICON_BASE: "${FAVICON_BASE}"
+    networks:
+      - "network-internal"
+    depends_on:
+      - "backend"
+    logging: *default-logging
+
+volumes:
+  postgres-volume:
