@@ -25,23 +25,32 @@ docker compose up -d
 
 The app listens on port 33333 by default (you can change HOST_PORT in .env).
 
-You can now open `http://<your-ip-address>:33333/admin` web panel, connect your extension with admin keys and customize your forum (e.g. `http://123.44.567.88:33333`).
+You can verify the app is running with `curl http://127.0.0.1:33333/api/health`
 
 ### Make your forum public
 
-Your forum can already federate with other instances on its own, but to let other users and instances reach you and fully unlock the power of Spasm, make the service accessible from the internet.
+#### Prerequisites
 
-You can use nginx to map port 33333 to your public domain e.g. `https://forum.website.com`. See example nginx config at `docs/nginx.config.example`
+- [DNS points](./config/nginx/DNS.md) to this server's IP address
+- Firewall allows ports 80 and 443
 
-If you need nginx configured automatically, execute these scripts:
+#### Automatic setup
 
 ```bash
-# adds config to /etc/nginx/sites-available/<your-domain-name>
-bash scripts/setup/sudo-configure-nginx.sh
-
-# get free TLS cert with auto-renewal via certbot (Let's Encrypt)
-bash scripts/setup/sudo-get-ssl.sh
+# configure nginx and obtain free SSL with auto-renewal
+bash scripts/setup/sudo-nginx-ssl your-domain.com 33333
 ```
+
+#### Manual setup
+
+- Route port 80 to 33333 to make forum accessible by IP.
+- Get SSL cert and route 443 to 33333 to make forum accessible by domain.
+
+[See detailed nginx setup instructions](./config/nginx/README.md)
+
+### Customize forum
+
+Open web admin panel at `http://<your-ip-address>/admin` or `https://your-domain.com/admin`, connect your extension with admin keys and customize your forum.
 
 ### Update forum
 
@@ -71,8 +80,4 @@ bash scripts/database-restore.sh backups/spasm-docker_spasm_database_20260101-33
 # Note: you should manually restart containers after database was restored
 docker compose stop && docker compose up -d
 ```
-
-
-
-
 
