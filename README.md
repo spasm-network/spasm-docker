@@ -1,8 +1,8 @@
 ## Spasm forum docker/podman deployment
 
-Launch Spasm under three minutes. The entire stack runs in isolated containers without exposing ports, while all traffic is funneled through a proxy container. It's secure, self-contained, and easy to deploy.
+Launch [Spasm](https://spasm.network) under three minutes. The entire stack runs in isolated containers without exposing ports, while all traffic is funneled through a proxy container. It's secure, self-contained, and easy to deploy.
 
-This repo is for deploying Spasm on existing servers. For new server setups, use [spasm-ansible] repo to automate everything from hardening to deployment with just one script.
+This repo is for deploying Spasm on existing servers. For new server setups, use [spasm-ansible](https://github.com/spasm-network/spasm-ansible) repo to automate everything from hardening to deployment with just one script.
 
 ### Prerequisites
 
