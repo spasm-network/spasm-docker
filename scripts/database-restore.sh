@@ -34,10 +34,15 @@ echo "🔍 Project: $PROJECT_NAME"
 echo "📥 Restore file: $BACKUP_PATH"
 echo "📦 Target DB: $POSTGRES_DATABASE"
 
-if command -v docker >/dev/null 2>&1; then
+# choose a runtime that can actually talk to its daemon/socket
+if command -v podman >/dev/null 2>&1 && podman volume ls >/dev/null 2>&1; then
+  CONTAINER_CMD=podman
+elif command -v docker >/dev/null 2>&1 && docker volume ls >/dev/null 2>&1; then
   CONTAINER_CMD=docker
 elif command -v podman >/dev/null 2>&1; then
   CONTAINER_CMD=podman
+elif command -v docker >/dev/null 2>&1; then
+  CONTAINER_CMD=docker
 else
   echo "❌ Error: neither docker nor podman found"
   exit 1
