@@ -68,16 +68,26 @@ else
   fi
 fi
 
-# Validating is done after obtaining a certificate,
-# otherwise it fails due to a missing certificate.
-# log_info "Validating nginx config..."
-# if ! sudo nginx -t; then
-#   log_error "Nginx config validation failed"
-#   exit 1
-# fi
+# Bootstrap self-signed cert so nginx -t passes before Certbot runs
+CERT_DIR="/etc/letsencrypt/live/$DOMAIN"
+if [ ! -f "$CERT_DIR/fullchain.pem" ]; then
+  log_info "Creating bootstrap self-signed certificate..."
+  sudo mkdir -p "$CERT_DIR"
+  sudo openssl req -x509 -newkey rsa:2048 -keyout "$CERT_DIR/privkey.pem" \
+    -out "$CERT_DIR/fullchain.pem" -days 1 -nodes \
+    -subj "/CN=$DOMAIN" 2>/dev/null
+  log_info "Bootstrap cert created"
+fi
 
-# sudo systemctl reload nginx
-# log_info "Nginx reloaded"
+# Now validate and reload
+log_info "Validating nginx config..."
+if ! sudo nginx -t; then
+  log_error "Nginx config validation failed"
+  exit 1
+fi
+
+sudo systemctl reload nginx
+log_info "Nginx reloaded with bootstrap cert"
 
 # Prepare ACME webroot
 log_info "Preparing ACME challenge directory..."
