@@ -16,8 +16,8 @@ log_error(){ echo -e "${RED}✗${NC} $1" >&2; }
 
 log_info "Configuring nginx for $DOMAIN on port $PORT"
 
-if [ ! -f ./nginx.template ]; then log_error "nginx.template not found"; exit 1; fi
-if [ ! -f ./websocket.conf ]; then log_error "websocket.conf not found"; exit 1; fi
+if [ ! -f ./config/nginx/nginx.template ]; then log_error "nginx.template not found"; exit 1; fi
+if [ ! -f ./config/nginx/websocket.conf ]; then log_error "websocket.conf not found"; exit 1; fi
 
 if [ "$EUID" -ne 0 ] && ! sudo -n true 2>/dev/null; then
   log_error "This script requires sudo privileges"
@@ -45,7 +45,7 @@ if [ -f "/etc/nginx/sites-available/$DOMAIN" ]; then
   log_warn "Backed up existing config to $BACKUP_FILE"
 fi
 
-sudo cp ./nginx.template "/etc/nginx/sites-available/$DOMAIN"
+sudo cp ./config/nginx/nginx.template "/etc/nginx/sites-available/$DOMAIN"
 sudo sed -i "s|example\.com|${DOMAIN}|g; s|:33333|:${PORT}|g" "/etc/nginx/sites-available/$DOMAIN"
 log_info "Nginx config created at /etc/nginx/sites-available/$DOMAIN"
 
@@ -59,11 +59,11 @@ if [ -n "$EXISTING_MAP" ]; then
   log_warn "Found at: $EXISTING_MAP"
 else
   if [ ! -f /etc/nginx/conf.d/websocket.conf ]; then
-    sudo cp ./websocket.conf /etc/nginx/conf.d/websocket.conf
+    sudo cp ./config/nginx/websocket.conf /etc/nginx/conf.d/websocket.conf
     log_info "WebSocket config installed to /etc/nginx/conf.d/websocket.conf"
   else
     sudo cp /etc/nginx/conf.d/websocket.conf "/etc/nginx/conf.d/websocket.conf.backup.$(date +%s)"
-    sudo cp ./websocket.conf /etc/nginx/conf.d/websocket.conf
+    sudo cp ./config/nginx/websocket.conf /etc/nginx/conf.d/websocket.conf
     log_info "WebSocket config overwritten (backup created)"
   fi
 fi
