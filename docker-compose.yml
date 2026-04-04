@@ -16,7 +16,7 @@ networks:
 
 services:
   proxy:
-    image: nginx:1.29.7-alpine
+    image: docker.io/nginx:1.29.7-alpine
     restart: unless-stopped
     ports:
       - "${HOST_PORT:-33333}:80"
@@ -37,7 +37,7 @@ services:
     logging: *default-logging
 
   postgres:
-    image: postgres:16
+    image: docker.io/postgres:16
     restart: unless-stopped
     environment:
       POSTGRES_USER: "${POSTGRES_USER:-spasm_user}"
