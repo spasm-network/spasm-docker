@@ -1,0 +1,127 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Detect container runtime (prefer podman, fall back to docker; error if none)
+if command -v podman >/dev/null 2>&1; then
+  CONTAINER_CMD=podman
+elif command -v docker >/dev/null 2>&1; then
+  CONTAINER_CMD=docker
+else
+  echo "Error: neither podman nor docker found in PATH" >&2
+  exit 1
+fi
+
+# sudo helper
+if [ "$(id -u)" -eq 0 ]; then SUDO=""; else SUDO="sudo"; fi
+
+# Defaults
+PORT="${PORT:-33333}"
+
+show_help() {
+  cat <<'EOF'
+Usage:
+  sudo bash run setup <domain> [port]
+  sudo bash run cert <domain>
+  sudo bash run cert-renew
+  sudo bash run cert-install <domain>
+
+  bash run update
+  bash run db-backup
+  bash run db-restore <backup-path>
+
+  bash run help
+EOF
+}
+
+require_domain() {
+  [ "${1:-}" ] || { echo "Error: domain required" >&2; exit 1; }
+  case "$1" in *[[:space:]]*) echo "Error: domain must not contain spaces" >&2; exit 1 ;; esac
+}
+
+require_port() {
+  local p="$1"
+  if ! printf '%s' "$p" | grep -Eq '^[0-9]+$'; then
+    echo "Error: port must be a number" >&2; exit 1
+  fi
+  if [ "$p" -lt 1 ] || [ "$p" -gt 65535 ]; then
+    echo "Error: port must be between 1 and 65535" >&2; exit 1
+  fi
+}
+
+require_backup() {
+  [ "${1:-}" ] || { echo "Error: backup path required" >&2; exit 1; }
+}
+
+run_compose() {
+  if "$CONTAINER_CMD" compose version >/dev/null 2>&1; then
+    "$CONTAINER_CMD" compose "$@"; return
+  fi
+  if command -v docker-compose >/dev/null 2>&1; then
+    docker-compose "$@"; return
+  fi
+  if command -v podman-compose >/dev/null 2>&1; then
+    podman-compose "$@"; return
+  fi
+  echo "Error: no compose command available" >&2; exit 1
+}
+
+COMMAND="${1:-help}"
+shift 2>/dev/null || true
+
+case "$COMMAND" in
+  setup)
+    domain="${1:-}"; port="${2:-$PORT}"
+    require_domain "$domain"
+    require_port "$port"
+    $SUDO bash scripts/setup/nginx-ssl-setup "$domain" "$port"
+    ;;
+
+  nginx-test)
+    $SUDO nginx -t
+    ;;
+
+  nginx-reload)
+    $SUDO nginx -t
+    $SUDO systemctl reload nginx
+    ;;
+
+  cert)
+    domain="${1:-}"
+    require_domain "$domain"
+    $SUDO certbot --nginx --non-interactive --agree-tos -d "$domain" --register-unsafely-without-email
+    ;;
+
+  cert-renew)
+    $SUDO certbot renew --nginx
+    ;;
+
+  cert-install)
+    domain="${1:-}"
+    require_domain "$domain"
+    $SUDO certbot install --nginx -d "$domain"
+    ;;
+
+  update)
+    git fetch origin
+    git pull --ff-only
+    run_compose pull --ignore-pull-failures || true
+    run_compose up -d --remove-orphans
+    ;;
+
+  db-backup)
+    bash scripts/database-backup.sh
+    ;;
+
+  db-restore)
+    backup="${1:-}"
+    require_backup "$backup"
+    bash scripts/database-backup.sh
+    bash scripts/database-restore.sh "$backup"
+    run_compose down
+    run_compose up -d --remove-orphans
+    ;;
+
+  help|*)
+    show_help
+    ;;
+esac

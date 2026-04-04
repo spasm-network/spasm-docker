@@ -8,7 +8,7 @@ This repo is for deploying Spasm on existing servers. For new server setups, use
 
 Docker or Podman (with `docker-compose` or `podman‑compose`). Podman is recommended for better isolation (rootless, daemonless). If you gonna use podman, then simply change `docker` to `podman` in all commands, e.g. `podman compose up -d`.
 
-The makefile automatically detects which runtime is installed and uses it.
+*Note: the `run` script automatically detects whether Docker or Podman is installed and uses it.*
 
 ### Installation
 
@@ -37,7 +37,7 @@ Prereqs: [DNS points](./config/nginx/DNS.md) to this server IP; firewall allows 
 
 ```bash
 # configure nginx, obtain SSL cert, add auto-renewal
-sudo make setup DOMAIN=your-domain.com PORT=33333
+sudo bash run setup your-domain.com 33333
 ```
 
 #### Manual setup
@@ -55,7 +55,7 @@ Open web admin panel at `http://<your-ip-address>/admin` or `https://your-domain
 
 ```bash
 # automatic: pull code, fetch images, restart containers
-make update
+bash run update
 
 # or manual:
 git pull --ff-only
@@ -66,19 +66,19 @@ docker compose pull && docker compose up -d
 
 ```bash
 # Backup database (saves .gz into backups/ folder)
-make db-backup
+bash run db-backup
 
 # Restore database (supports .sql and .gz, restarts containers)
-make db-restore BACKUP=backups/spasm-docker_spasm_database_20260101.sql.gz
+bash run db-restore backups/spasm-docker_spasm_database_20260101.sql.gz
 ```
 
 #### SSL Certificate Management
 
 ```bash
 # Obtain new certificate
-sudo make cert DOMAIN=your-domain.com
+sudo bash run cert your-domain.com
 
 # Renew all certificates
-sudo make cert-renew
+sudo bash run cert-renew
 ```
 
