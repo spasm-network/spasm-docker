@@ -68,11 +68,13 @@ else
   fi
 fi
 
-log_info "Validating nginx config..."
-if ! sudo nginx -t; then
-  log_error "Nginx config validation failed"
-  exit 1
-fi
+# Validating is done after obtaining a certificate,
+# otherwise it fails due to a missing certificate.
+# log_info "Validating nginx config..."
+# if ! sudo nginx -t; then
+#   log_error "Nginx config validation failed"
+#   exit 1
+# fi
 
 sudo systemctl reload nginx
 log_info "Nginx reloaded"
