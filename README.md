@@ -8,6 +8,8 @@ This repo is for deploying Spasm on existing servers. For new server setups, use
 
 Docker or Podman (with `docker-compose` or `podman‑compose`). Podman is recommended for better isolation (rootless, daemonless). If you gonna use podman, then simply change `docker` to `podman` in all commands, e.g. `podman compose up -d`.
 
+The makefile automatically detects which runtime is installed and uses it.
+
 ### Installation
 
 ```bash
@@ -29,16 +31,13 @@ You can verify the app is running with `curl http://127.0.0.1:33333/api/health`
 
 ### Make your forum public
 
-#### Prerequisites
-
-- [DNS points](./config/nginx/DNS.md) to this server's IP address
-- Firewall allows ports 80 and 443
+Prereqs: [DNS points](./config/nginx/DNS.md) to this server IP; firewall allows ports 80 and 443.
 
 #### Automatic setup
 
 ```bash
-# configure nginx and obtain free SSL with auto-renewal
-bash scripts/setup/sudo-nginx-ssl your-domain.com 33333
+# configure nginx, obtain SSL cert, add auto-renewal
+sudo make setup DOMAIN=your-domain.com PORT=33333
 ```
 
 #### Manual setup
@@ -55,29 +54,31 @@ Open web admin panel at `http://<your-ip-address>/admin` or `https://your-domain
 ### Update forum
 
 ```bash
-cd spasm-docker/
-git pull --ff-only
-# or if you want to force-match remote (discards local changes):
-# git fetch origin && git reset --hard origin/master
+# automatic: pull code, fetch images, restart containers
+make update
 
+# or manual:
+git pull --ff-only
 docker compose pull && docker compose up -d
 ```
 
-## Scripts
-
-### Database scripts
+#### Database management
 
 ```bash
 # Backup database (saves .gz into backups/ folder)
-bash scripts/database-backup.sh
+make db-backup
 
-# Restore database (supports .sql and .gz)
-bash scripts/database-restore.sh path/to/db/backup.sql.gz
+# Restore database (supports .sql and .gz, restarts containers)
+make db-restore BACKUP=backups/spasm-docker_spasm_database_20260101.sql.gz
+```
 
-# example:
-bash scripts/database-restore.sh backups/spasm-docker_spasm_database_20260101-33333.sql.gz
+#### SSL Certificate Management
 
-# Note: you should manually restart containers after database was restored
-docker compose stop && docker compose up -d
+```bash
+# Obtain new certificate
+sudo make cert DOMAIN=your-domain.com
+
+# Renew all certificates
+sudo make cert-renew
 ```
 
