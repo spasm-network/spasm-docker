@@ -31,7 +31,7 @@ sudo cp -n ./websocket.conf /etc/nginx/conf.d/websocket.conf
 sudo nginx -t && sudo systemctl reload nginx
 
 # obtain certificate
-sudo certbot --non-interactive --agree-tos --nginx -d $DOMAIN --register-unsafely-without-email
+sudo certbot --non-interactive --agree-tos --nginx -d $DOMAIN --register-unsafely-without-email --reinstall
 
 sudo nginx -t && sudo systemctl reload nginx
 ```
