@@ -103,7 +103,7 @@ sudo chmod 755 /var/www/certbot
 log_info "Requesting/Installing SSL certificate for $DOMAIN..."
 
 CERTBOT_LOG="/tmp/certbot_setup_$(date +%s).log"
-if sudo certbot --nginx --non-interactive --agree-tos -d "$DOMAIN" --register-unsafely-without-email --reinstall >"$CERTBOT_LOG" 2>&1; then
+if sudo certbot --nginx --non-interactive --agree-tos -d "$DOMAIN" --cert-name "$DOMAIN" --register-unsafely-without-email --force-renewal >"$CERTBOT_LOG" 2>&1; then
   log_info "Certificate obtained and nginx config updated"
 else
   log_error "Certbot failed. Showing ${CERTBOT_LOG}:"
