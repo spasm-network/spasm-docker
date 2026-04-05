@@ -82,6 +82,10 @@ server {
     add_header Referrer-Policy "no-referrer-when-downgrade" always;
     add_header X-XSS-Protection "1; mode=block" always;
     
+    # TLS certificate paths (set by ssl_certificate role)
+    ssl_certificate /etc/letsencrypt/live/example.com/fullchain.pem; # managed by Certbot
+    ssl_certificate_key /etc/letsencrypt/live/example.com/privkey.pem; # managed by Certbot
+
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_prefer_server_ciphers on;
 

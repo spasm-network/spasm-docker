@@ -28,11 +28,21 @@ sudo ln -sf /etc/nginx/sites-available/$DOMAIN /etc/nginx/sites-enabled/$DOMAIN
 # (optional) skip this if you already have websocket config
 sudo cp -n ./websocket.conf /etc/nginx/conf.d/websocket.conf
 
+# Create bootstrap self-signed certificate so nginx -t passes before Certbot runs
+CERT_DIR="/etc/letsencrypt/live/$DOMAIN"
+sudo mkdir -p "$CERT_DIR"
+sudo openssl req -x509 -newkey rsa:2048 -keyout "$CERT_DIR/privkey.pem" \
+  -out "$CERT_DIR/fullchain.pem" -days 1 -nodes -subj "/CN=$DOMAIN" 2>/dev/null
+
+# Validate and reload with bootstrap cert
 sudo nginx -t && sudo systemctl reload nginx
 
-# obtain certificate
-sudo certbot --non-interactive --agree-tos --nginx -d $DOMAIN --register-unsafely-without-email --reinstall
+# Obtain certificate (replaces bootstrap cert)
+sudo certbot --nginx --non-interactive --agree-tos -d $DOMAIN \
+  --register-unsafely-without-email --reinstall
 
+# Validate and reload with real certificate
 sudo nginx -t && sudo systemctl reload nginx
 ```
 
+*Note: `certbot --nginx` messes up a template if we only set http block, so we're keeping both http and https blocks and self-sign temporary cert to pass `nginx -t` before obtaining certificate.*
