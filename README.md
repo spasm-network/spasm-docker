@@ -65,20 +65,23 @@ docker compose pull && docker compose up -d
 #### Database management
 
 ```bash
-# Backup database (saves .gz into backups/ folder)
+# backup database (saves .gz into backups/ folder)
 bash run db-backup
 
-# Restore database (supports .sql and .gz, restarts containers)
+# restore database (supports .sql and .gz, restarts containers)
 bash run db-restore backups/spasm-docker_spasm_database_20260101.sql.gz
 ```
 
 #### SSL Certificate Management
 
 ```bash
-# Obtain new certificate
+# configure nginx, obtain SSL cert, add auto-renewal
+sudo bash run setup your-domain.com 33333
+
+# obtain new certificate (without nginx config)
 sudo bash run cert your-domain.com
 
-# Renew all certificates
+# renew all certificates
 sudo bash run cert-renew
 ```
 

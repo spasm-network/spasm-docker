@@ -16,33 +16,52 @@ sudo pacman -Sy && sudo pacman -S --noconfirm nginx certbot certbot-nginx
 
 ## Configure nginx and obtain SSL certificate
 
+Execute these commands from project root.
+
 ```bash
-# Set your domain name and port for this shell only
+# Set domain and port for this shell
 DOMAIN=example.com PORT=33333
 
-# Configure nginx
-sudo cp ./nginx.template /etc/nginx/sites-available/$DOMAIN
+# Clean up any stale certificate data
+sudo rm -rf /etc/letsencrypt/live/$DOMAIN
+sudo rm -rf /etc/letsencrypt/archive/$DOMAIN
+sudo rm -f /etc/letsencrypt/renewal/$DOMAIN.conf
+
+# Install temporary HTTP-only nginx config (for ACME validation)
+sudo cp ./config/nginx/nginx.http.template /etc/nginx/sites-available/$DOMAIN
 sudo sed -i "s|example\.com|${DOMAIN}|g; s|:33333|:${PORT}|g" /etc/nginx/sites-available/$DOMAIN
 sudo ln -sf /etc/nginx/sites-available/$DOMAIN /etc/nginx/sites-enabled/$DOMAIN
 
-# (optional) skip this if you already have websocket config
-sudo cp -n ./websocket.conf /etc/nginx/conf.d/websocket.conf
+# (optional) copy websocket config if missing
+sudo cp -n ./config/nginx/websocket.conf /etc/nginx/conf.d/websocket.conf
 
-# Create bootstrap self-signed certificate so nginx -t passes before Certbot runs
-CERT_DIR="/etc/letsencrypt/live/$DOMAIN"
-sudo mkdir -p "$CERT_DIR"
-sudo openssl req -x509 -newkey rsa:2048 -keyout "$CERT_DIR/privkey.pem" \
-  -out "$CERT_DIR/fullchain.pem" -days 1 -nodes -subj "/CN=$DOMAIN" 2>/dev/null
-
-# Validate and reload with bootstrap cert
+# Validate and reload nginx
 sudo nginx -t && sudo systemctl reload nginx
 
-# Obtain certificate (replaces bootstrap cert)
-sudo certbot --nginx --non-interactive --agree-tos -d $DOMAIN \
-  --register-unsafely-without-email --reinstall
+# Obtain certificate without changing nginx config (certonly)
+sudo certbot certonly --nginx -d "$DOMAIN" --cert-name "$DOMAIN" --non-interactive --agree-tos --register-unsafely-without-email
 
-# Validate and reload with real certificate
+# Install canonical HTTP+HTTPS nginx template (now that cert exists)
+sudo cp ./config/nginx/nginx.template /etc/nginx/sites-available/$DOMAIN
+sudo sed -i "s|example\.com|${DOMAIN}|g; s|:33333|:${PORT}|g" /etc/nginx/sites-available/$DOMAIN
+sudo ln -sf /etc/nginx/sites-available/$DOMAIN /etc/nginx/sites-enabled/$DOMAIN
 sudo nginx -t && sudo systemctl reload nginx
+
+# Configure certbot to manage nginx (adds renewal automation like auto-restart)
+sudo certbot --nginx --cert-name "$DOMAIN" --non-interactive --agree-tos --register-unsafely-without-email
+sudo nginx -t && sudo systemctl reload nginx
+
+# (optional) check issued cert and renewal
+sudo certbot certificates --cert-name "$DOMAIN"
+sudo systemctl is-enabled --quiet certbot.timer && echo "enabled" || echo "NOT enabled"
 ```
 
-*Note: `certbot --nginx` messes up a template if we only set http block, so we're keeping both http and https blocks and self-sign temporary cert to pass `nginx -t` before obtaining certificate.*
+## Why call certbot twice?
+
+Certbot's `--nginx` plugin often messes up full HTTP+HTTPS templates, so our approach avoids this:
+
+1. Issue cert using a simple HTTP-only template
+2. Install a full HTTP+HTTPS template
+3. `certbot --nginx` annotates the config for renewal automation
+
+This preserves nginx structure while enabling automatic cert renewal.
