@@ -4,6 +4,8 @@ set -euo pipefail
 DOMAIN="${1:-}"
 PORT="${2:-33333}"
 
+CERTBOT_INSTALL="${CERTBOT_INSTALL:-1}"
+
 if [ -z "$DOMAIN" ]; then
   echo "Usage: bash $0 <domain> [port]"
   exit 1
@@ -17,6 +19,7 @@ log_error(){ echo -e "${RED}✗${NC} $1" >&2; }
 log_info "Configuring nginx for $DOMAIN on port $PORT"
 
 if [ ! -f ./config/nginx/nginx.template ]; then log_error "nginx.template not found"; exit 1; fi
+if [ ! -f ./config/nginx/nginx.http.template ]; then log_error "nginx.http.template not found"; exit 1; fi
 if [ ! -f ./config/nginx/websocket.conf ]; then log_error "websocket.conf not found"; exit 1; fi
 
 if [ "$EUID" -ne 0 ] && ! sudo -n true 2>/dev/null; then
@@ -38,19 +41,17 @@ else
   exit 1
 fi
 
+# Clean up stale data
+sudo rm -rf "/etc/letsencrypt/live/$DOMAIN"
+sudo rm -rf "/etc/letsencrypt/archive/$DOMAIN"
+sudo rm -f "/etc/letsencrypt/renewal/$DOMAIN.conf"
+
 log_info "Configuring nginx..."
 if [ -f "/etc/nginx/sites-available/$DOMAIN" ]; then
   BACKUP_FILE="/etc/nginx/sites-available/${DOMAIN}.backup.$(date +%s)"
   sudo cp "/etc/nginx/sites-available/$DOMAIN" "$BACKUP_FILE"
   log_warn "Backed up existing config to $BACKUP_FILE"
 fi
-
-sudo cp ./config/nginx/nginx.template "/etc/nginx/sites-available/$DOMAIN"
-sudo sed -i "s|example\.com|${DOMAIN}|g; s|:33333|:${PORT}|g" "/etc/nginx/sites-available/$DOMAIN"
-log_info "Nginx config created at /etc/nginx/sites-available/$DOMAIN"
-
-sudo ln -sf "/etc/nginx/sites-available/$DOMAIN" "/etc/nginx/sites-enabled/$DOMAIN"
-log_info "Symlink created in /etc/nginx/sites-enabled/"
 
 # Check for existing websocket map anywhere in /etc/nginx
 EXISTING_MAP=$(sudo grep -R --line-number -E "map.*\$http_upgrade.*\$connection_upgrade" /etc/nginx || true)
@@ -68,57 +69,86 @@ else
   fi
 fi
 
-# Clean up stale data
-sudo rm -rf /etc/letsencrypt/live/$DOMAIN
-sudo rm -rf /etc/letsencrypt/archive/$DOMAIN
-sudo rm -f /etc/letsencrypt/renewal/$DOMAIN.conf
+# Install HTTP-only nginx config first (so certbot can parse an 80-only server block)
+log_info "Installing HTTP-only nginx config for ACME challenge..."
+sudo cp ./config/nginx/nginx.http.template "/etc/nginx/sites-available/$DOMAIN"
+sudo sed -i "s|example\.com|${DOMAIN}|g; s|:33333|:${PORT}|g" "/etc/nginx/sites-available/$DOMAIN"
+sudo ln -sf "/etc/nginx/sites-available/$DOMAIN" "/etc/nginx/sites-enabled/$DOMAIN"
+log_info "HTTP-only nginx config installed at /etc/nginx/sites-available/$DOMAIN"
 
-# Bootstrap self-signed cert so nginx -t passes before Certbot runs
-CERT_DIR="/etc/letsencrypt/live/$DOMAIN"
-if [ ! -f "$CERT_DIR/fullchain.pem" ]; then
-  log_info "Creating bootstrap self-signed certificate..."
-  sudo mkdir -p "$CERT_DIR"
-  sudo openssl req -x509 -newkey rsa:2048 -keyout "$CERT_DIR/privkey.pem" \
-    -out "$CERT_DIR/fullchain.pem" -days 1 -nodes \
-    -subj "/CN=$DOMAIN" 2>/dev/null
-  log_info "Bootstrap cert created"
-fi
-
-# Now validate and reload
-log_info "Validating nginx config..."
+log_info "Validating nginx config after installing http-only config..."
 if ! sudo nginx -t; then
   log_error "Nginx config validation failed"
   exit 1
 fi
 
 sudo systemctl reload nginx
-log_info "Nginx reloaded with bootstrap cert"
+log_info "Nginx reloaded (HTTP-only site active)"
 
-# Prepare ACME webroot
-log_info "Preparing ACME challenge directory..."
-sudo mkdir -p /var/www/certbot
-# ownership: root is fine, but ensure nginx can read
-sudo chmod 755 /var/www/certbot
-
-log_info "Requesting/Installing SSL certificate for $DOMAIN..."
-
-CERTBOT_LOG="/tmp/certbot_setup_$(date +%s).log"
-if sudo certbot --nginx --non-interactive --agree-tos -d "$DOMAIN" --cert-name "$DOMAIN" --register-unsafely-without-email --force-renewal >"$CERTBOT_LOG" 2>&1; then
-  log_info "Certificate obtained and nginx config updated"
+# Obtain certs without modifying nginx config: certbot certonly --nginx
+log_info "Requesting certificate (certonly) for $DOMAIN..."
+CERTBOT_LOG="/tmp/certbot_certonly_$(date +%s).log"
+if sudo certbot certonly --nginx -d "$DOMAIN" --cert-name "$DOMAIN" --non-interactive --agree-tos --register-unsafely-without-email >"$CERTBOT_LOG" 2>&1; then
+  log_info "Certificate obtained (certonly)."
 else
-  log_error "Certbot failed. Showing ${CERTBOT_LOG}:"
+  log_error "certbot certonly failed; see $CERTBOT_LOG"
   sudo sed -n '1,200p' "$CERTBOT_LOG" >&2 || true
-  log_error "Also check /var/log/letsencrypt/letsencrypt.log for details"
   exit 1
 fi
 
-log_info "Validating nginx config after certbot..."
+# Now validate and reload
+log_info "Validating nginx config after obtaining cert..."
 if ! sudo nginx -t; then
-  log_error "Nginx config validation failed after certbot"
+  log_error "Nginx config validation failed"
   exit 1
 fi
 
 sudo systemctl reload nginx
-log_info "Nginx reloaded with SSL config"
+log_info "Nginx reloaded with obtained cert (http-only config)"
+
+# Install the canonical HTTP+HTTPS nginx template now that certs exist
+log_info "Installing canonical nginx template (HTTP+HTTPS)..."
+sudo cp ./config/nginx/nginx.template "/etc/nginx/sites-available/$DOMAIN"
+sudo sed -i "s|example\.com|${DOMAIN}|g; s|:33333|:${PORT}|g" "/etc/nginx/sites-available/$DOMAIN"
+sudo ln -sf "/etc/nginx/sites-available/$DOMAIN" "/etc/nginx/sites-enabled/$DOMAIN"
+log_info "Canonical nginx config installed at /etc/nginx/sites-available/$DOMAIN"
+
+log_info "Validating nginx config after installing canonical http+https config..."
+if ! sudo nginx -t; then
+  log_error "Nginx config validation failed after installing canonical template"
+  exit 1
+fi
+
+sudo systemctl reload nginx
+log_info "Nginx reloaded with canonical HTTP+HTTPS config"
+
+# Verify certs exist
+if sudo certbot certificates --cert-name "$DOMAIN" >/dev/null 2>&1; then
+  log_info "Certbot reports certificate present for $DOMAIN"
+else
+  log_error "Certificate not found after certonly; ls /etc/letsencrypt/live/$DOMAIN"
+  sudo ls -la "/etc/letsencrypt/live/$DOMAIN" || true
+  exit 1
+fi
+
+# Let certbot modify the nginx config to include its managed markers,
+# so it can manage the 80/443 blocks going forward.
+if [ "${CERTBOT_INSTALL:-1}" -eq 1 ]; then
+  log_info "Running certbot --nginx --cert-name $DOMAIN..."
+  CERTBOT_LOG="/tmp/certbot_install_$(date +%s).log"
+  if ! sudo certbot --nginx --cert-name "$DOMAIN" --non-interactive --agree-tos --register-unsafely-without-email >"$CERTBOT_LOG" 2>&1; then
+    log_error "certbot --nginx install failed; see $CERTBOT_LOG"
+    sudo sed -n '1,200p' "$CERTBOT_LOG" >&2 || true
+    exit 1  # Make it fatal instead of warning
+  fi
+
+  log_info "Validating nginx config after certbot install..."
+  if ! sudo nginx -t; then
+    log_error "Nginx config validation failed after certbot install"
+    exit 1
+  fi
+  sudo systemctl reload nginx
+  log_info "Nginx reloaded (certbot annotations applied)"
+fi
 
 log_info "Setup complete! $DOMAIN is now configured with SSL"

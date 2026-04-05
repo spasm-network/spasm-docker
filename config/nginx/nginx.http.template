@@ -1,0 +1,53 @@
+# nginx.http.template (for certbot certonly phase)
+
+upstream backend_example.com {
+    server 127.0.0.1:33333;
+    keepalive 16;
+}
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name example.com;
+    access_log /var/log/nginx/example.com.access.log;
+    error_log  /var/log/nginx/example.com.error.log warn;
+
+    client_max_body_size 50M;
+
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header Referrer-Policy "no-referrer-when-downgrade" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+
+    send_timeout 30s;
+    proxy_connect_timeout 10s;
+    proxy_read_timeout 90s;
+    proxy_send_timeout 60s;
+
+    location = /nginx_host_status {
+        stub_status on;
+        allow 127.0.0.1;
+        deny all;
+    }
+
+    # ACME challenge location (certbot needs this)
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+        try_files $uri =404;
+    }
+
+    # Proxy everything else (no redirect)
+    location / {
+        proxy_pass http://backend_example.com;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Port $server_port;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_cache_bypass $http_upgrade;
+    }
+}
