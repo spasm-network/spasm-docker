@@ -1,5 +1,5 @@
 # Per-site upstream (unique name to avoid collisions across multiple sites)
-upstream backend {
+upstream backend_example.com {
     server 127.0.0.1:33333;
     keepalive 16;
 }

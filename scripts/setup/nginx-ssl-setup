@@ -68,6 +68,11 @@ else
   fi
 fi
 
+# Clean up stale data
+sudo rm -rf /etc/letsencrypt/live/$DOMAIN
+sudo rm -rf /etc/letsencrypt/archive/$DOMAIN
+sudo rm -f /etc/letsencrypt/renewal/$DOMAIN.conf
+
 # Bootstrap self-signed cert so nginx -t passes before Certbot runs
 CERT_DIR="/etc/letsencrypt/live/$DOMAIN"
 if [ ! -f "$CERT_DIR/fullchain.pem" ]; then
