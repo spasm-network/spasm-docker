@@ -68,10 +68,16 @@ else
   fi
 fi
 
-# Clean renewal config to avoid "live directory exists" error
-sudo rm -f /etc/letsencrypt/renewal/$DOMAIN.conf
-sudo rm -rf /etc/letsencrypt/archive/$DOMAIN
-sudo rm -rf /etc/letsencrypt/live/$DOMAIN
+# Bootstrap self-signed cert so nginx -t passes before Certbot runs
+CERT_DIR="/etc/letsencrypt/live/$DOMAIN"
+if [ ! -f "$CERT_DIR/fullchain.pem" ]; then
+  log_info "Creating bootstrap self-signed certificate..."
+  sudo mkdir -p "$CERT_DIR"
+  sudo openssl req -x509 -newkey rsa:2048 -keyout "$CERT_DIR/privkey.pem" \
+    -out "$CERT_DIR/fullchain.pem" -days 1 -nodes \
+    -subj "/CN=$DOMAIN" 2>/dev/null
+  log_info "Bootstrap cert created"
+fi
 
 # Now validate and reload
 log_info "Validating nginx config..."
@@ -92,7 +98,7 @@ sudo chmod 755 /var/www/certbot
 log_info "Requesting/Installing SSL certificate for $DOMAIN..."
 
 CERTBOT_LOG="/tmp/certbot_setup_$(date +%s).log"
-if sudo certbot --nginx --non-interactive --agree-tos -d "$DOMAIN" --register-unsafely-without-email >"$CERTBOT_LOG" 2>&1; then
+if sudo certbot --nginx --non-interactive --agree-tos -d "$DOMAIN" --register-unsafely-without-email --reinstall >"$CERTBOT_LOG" 2>&1; then
   log_info "Certificate obtained and nginx config updated"
 else
   log_error "Certbot failed. Showing ${CERTBOT_LOG}:"
