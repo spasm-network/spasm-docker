@@ -1,5 +1,5 @@
 # Per-site upstream (unique name to avoid collisions across multiple sites)
-upstream backend_example.com {
+upstream example.com_backend {
     server 127.0.0.1:33333;
     keepalive 16;
 }
@@ -43,7 +43,7 @@ server {
     
     # Proxy to container (default when no HTTPS redirect)
     location / {
-        proxy_pass http://backend_example.com;
+        proxy_pass http://example.com_backend;
         proxy_http_version 1.1;
 
         # Preserve original host/protocol and client IP for the downstream container proxy
@@ -103,7 +103,7 @@ server {
     }
     
     location / {
-        proxy_pass http://backend_example.com;
+        proxy_pass http://example.com_backend;
         proxy_http_version 1.1;
 
         proxy_set_header Host $host;

@@ -1,6 +1,6 @@
 # nginx.http.template (for certbot certonly phase)
 
-upstream backend_example.com {
+upstream example.com_backend {
     server 127.0.0.1:33333;
     keepalive 16;
 }
@@ -38,7 +38,7 @@ server {
 
     # Proxy everything else (no redirect)
     location / {
-        proxy_pass http://backend_example.com;
+        proxy_pass http://example.com_backend;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
