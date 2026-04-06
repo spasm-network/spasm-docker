@@ -1,5 +1,3 @@
-# version: '3.8'
-
 x-logging: &default-logging
   driver: "json-file"
   options:
@@ -72,7 +70,9 @@ services:
       POSTGRES_DATABASE: "${POSTGRES_DATABASE:-spasm_database}"
       POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-spasm_password}"
       POSTGRES_USER: "${POSTGRES_USER:-spasm_user}"
+      MODERATORS: "${ADMINS}"
     networks:
+      - "network-external" # required for federation
       - "network-internal"
     depends_on:
       postgres:
@@ -99,7 +99,8 @@ services:
       NUXT_PUBLIC_ADMINS: "${ADMINS}"
       NUXT_PUBLIC_API_URL: "${API_URL}"
       NUXT_API_URL_DOCKER_SSR: "http://backend:5000"
-      NUXT_PUBLIC_FAVICON_BASE: "${FAVICON_BASE}"
+      # NUXT_PUBLIC_FAVICON_BASE: "${FAVICON_BASE}"
+      NUXT_PUBLIC_MODERATORS: "${ADMINS}"
     networks:
       - "network-internal"
     depends_on:
