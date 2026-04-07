@@ -74,16 +74,3 @@ bash run db-backup
 bash run db-restore backups/spasm-docker_spasm_database_20260101.sql.gz
 ```
 
-#### SSL Certificate Management
-
-```bash
-# configure nginx, obtain SSL cert, add auto-renewal
-sudo bash run setup your-domain.com 33333
-
-# obtain new certificate (without nginx config)
-sudo bash run cert your-domain.com
-
-# renew all certificates
-sudo bash run cert-renew
-```
-
