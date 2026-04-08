@@ -86,9 +86,7 @@ Certbot's `--nginx` plugin often messes up full HTTP+HTTPS templates, while `--w
 
 This preserves nginx structure while enabling automatic cert renewal.
 
-#### SSL Certificate Management
-
-All SSL-related helper scripts:
+#### SSL-related helper scripts
 
 ```bash
 # configure nginx, obtain SSL cert, add auto-renewal

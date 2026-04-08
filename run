@@ -20,7 +20,10 @@ PORT="${PORT:-33333}"
 show_help() {
   cat <<'EOF'
 Usage:
+  sudo bash run install-podman
+
   sudo bash run setup <domain> [port]
+
   sudo bash run cert <domain>
   sudo bash run cert-renew
   sudo bash run cert-install <domain>
@@ -110,6 +113,10 @@ case "$COMMAND" in
 
   db-backup)
     bash scripts/database-backup.sh
+    ;;
+
+  install-podman)
+    $SUDO bash podman/install-podman
     ;;
 
   db-restore)
