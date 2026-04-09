@@ -1,27 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Detect container runtime (prefer podman, fall back to docker; error if none)
-if command -v podman >/dev/null 2>&1; then
-  CONTAINER_CMD=podman
-elif command -v docker >/dev/null 2>&1; then
-  CONTAINER_CMD=docker
-else
-  echo "Error: neither podman nor docker found in PATH" >&2
-  exit 1
-fi
+# Lazy-detect container runtime when needed so install-podman can run before podman/docker is installed.
 
 # sudo helper
 if [ "$(id -u)" -eq 0 ]; then SUDO=""; else SUDO="sudo"; fi
 
 # Defaults
 PORT="${PORT:-33333}"
+CONTAINER_CMD=""
 
 show_help() {
   cat <<'EOF'
 Usage:
-  sudo bash run install-podman
-
   sudo bash run setup <domain> [port]
 
   sudo bash run cert <domain>
@@ -55,17 +46,37 @@ require_backup() {
   [ "${1:-}" ] || { echo "Error: backup path required" >&2; exit 1; }
 }
 
-run_compose() {
-  if "$CONTAINER_CMD" compose version >/dev/null 2>&1; then
-    "$CONTAINER_CMD" compose "$@"; return
+detect_container_cmd() {
+  if command -v podman >/dev/null 2>&1; then
+    CONTAINER_CMD=podman
+  elif command -v docker >/dev/null 2>&1; then
+    CONTAINER_CMD=docker
+  else
+    CONTAINER_CMD=""
   fi
+}
+
+run_compose() {
+  # Ensure we have a container runtime detected (lazy)
+  [ -n "${CONTAINER_CMD:-}" ] || detect_container_cmd
+
+  # Prefer native "podman|docker compose" if available and supports subcommand
+  if [ -n "${CONTAINER_CMD:-}" ]; then
+    if "$CONTAINER_CMD" compose version >/dev/null 2>&1; then
+      "$CONTAINER_CMD" compose "$@"; return
+    fi
+  fi
+
+  # Fallbacks to classic wrappers
   if command -v docker-compose >/dev/null 2>&1; then
     docker-compose "$@"; return
   fi
   if command -v podman-compose >/dev/null 2>&1; then
     podman-compose "$@"; return
   fi
-  echo "Error: no compose command available" >&2; exit 1
+
+  echo "Error: neither podman nor docker nor compose wrappers found in PATH" >&2
+  exit 1
 }
 
 COMMAND="${1:-help}"
@@ -115,9 +126,9 @@ case "$COMMAND" in
     bash scripts/database-backup.sh
     ;;
 
-  install-podman)
-    $SUDO bash podman/install-podman "$@"
-    ;;
+  # install-podman)
+  #   $SUDO bash podman/install-podman "$@"
+  #   ;;
 
   db-restore)
     backup="${1:-}"

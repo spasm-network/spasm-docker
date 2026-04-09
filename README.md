@@ -8,9 +8,7 @@ This repo is for deploying Spasm on existing servers. For new server setups, use
 
 ### Prerequisites
 
-Docker or Podman (with `docker-compose` or `podman‑compose`). Podman is recommended for better isolation (rootless, daemonless). If you gonna use podman, then simply change `docker` to `podman` in all commands, e.g. `podman compose up -d`.
-
-*Note: the `run` script automatically detects whether Docker or Podman is installed and uses it.*
+[Docker](docker/README.md) or [Podman](podman/README.md). Docker is easy, Podman is more secure, but requires extra setup to auto-restart.
 
 ### Installation
 
@@ -54,6 +52,8 @@ sudo bash run setup your-domain.com 33333
 Open web admin panel at `http://<your-ip-address>/admin` or `https://your-domain.com/admin`, connect your extension with admin keys and customize your forum.
 
 ### Update forum
+
+*Note: the `run` script automatically detects whether Docker or Podman is installed and uses it.*
 
 ```bash
 # automatic: pull code, fetch images, restart containers
