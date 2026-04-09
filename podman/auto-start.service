@@ -5,6 +5,7 @@ Wants=network-online.target podman.socket
 
 [Service]
 Type=oneshot
+ExecStartPre=systemctl
 ExecStart=%h/.local/bin/podman-auto-start-spasm.sh
 RemainAfterExit=yes
 

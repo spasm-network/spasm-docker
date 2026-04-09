@@ -116,7 +116,7 @@ case "$COMMAND" in
     ;;
 
   install-podman)
-    $SUDO bash podman/install-podman
+    $SUDO bash podman/install-podman "$@"
     ;;
 
   db-restore)

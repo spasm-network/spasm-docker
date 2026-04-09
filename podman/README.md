@@ -12,8 +12,8 @@ sudo bash run install-podman
 sudo loginctl enable-linger user
 
 # install script and unit
-install -Dm755 ./podman/auto-start.sh ~/.local/bin/podman-auto-start.sh
-install -Dm644 ./podman/auto-start.service ~/.config/systemd/user/podman-auto-start.service
+install -Dm755 ./podman/auto-start.sh ~/.local/bin/podman-auto-start-spasm.sh
+install -Dm644 ./podman/auto-start.service ~/.config/systemd/user/podman-auto-start-spasm.service
 
 systemctl --user daemon-reload
 systemctl --user enable --now podman-auto-start.service
@@ -23,5 +23,5 @@ systemctl --user enable --now podman-auto-start.service
 
 ```
 # view logs
-tail -f ~/.local/share/podman-auto-start.log
+tail -f ~/.local/share/podman-auto-start-spasm.log
 ```

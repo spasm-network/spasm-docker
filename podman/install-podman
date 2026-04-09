@@ -1,341 +1,209 @@
 #!/usr/bin/env bash
-# install-podman
-#
-# Installs Podman + docker-compose (or podman-compose) using the distro's native
-# package manager, then sets up the auto-start systemd user service.
-#
-# MUST be run from the project root directory (where docker-compose.yml lives).
-# Usage: sudo bash podman/install-podman
-#
-# Supports: Debian/Ubuntu, Fedora/RHEL (dnf only), Arch/Manjaro, openSUSE
-# Does NOT support: old RHEL/CentOS with yum, pip fallbacks
-
+# install-podman (final with podman.socket/service enable)
+# Usage:
+#  sudo bash podman/install-podman            # install for caller (SUDO_USER)
+#  sudo bash podman/install-podman alice      # install for specific target user 'alice'
+#  sudo TARGET_USER=root bash podman/install-podman  # install for root (advanced/CI)
 set -euo pipefail
 
-# ─── Paths ────────────────────────────────────────────────────────────────────
-
-# Resolve the directory where this script lives (podman/)
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE}")" >/dev/null 2>&1 && pwd)"
-
-# Source files are siblings of this script inside podman/
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 AUTO_SCRIPT_SRC="$SCRIPT_DIR/auto-start.sh"
 AUTO_SERVICE_SRC="$SCRIPT_DIR/auto-start.service"
-
-# Destination paths relative to the target user's home
-AUTO_SCRIPT_DEST_REL=".local/bin/podman-auto-start.sh"
-AUTO_SERVICE_DEST_REL=".config/systemd/user/podman-auto-start.service"
-
+AUTO_SCRIPT_DEST_REL=".local/bin/podman-auto-start-spasm.sh"
+AUTO_SERVICE_DEST_REL=".config/systemd/user/podman-auto-start-spasm.service"
 LOG_PREFIX="[install-podman]"
-
-# ─── Helpers ──────────────────────────────────────────────────────────────────
 
 info() { echo "$LOG_PREFIX $*"; }
 err()  { echo "$LOG_PREFIX ERROR: $*" >&2; }
 
-# ─── Root check ───────────────────────────────────────────────────────────────
-# We do NOT auto-re-exec with sudo. Requiring explicit sudo makes the privilege
-# escalation visible and intentional, which is safer and clearer.
+[ "$EUID" -eq 0 ] || { err "Run as root (use sudo)."; exit 1; }
 
-if [ "$EUID" -ne 0 ]; then
-  err "This script must be run as root."
-  echo "Please re-run with: sudo bash $0 $*" >&2
-  exit 1
+for f in "$AUTO_SCRIPT_SRC" "$AUTO_SERVICE_SRC"; do
+  [ -f "$f" ] || { err "Missing: $f"; exit 1; }
+done
+
+EXPLICIT_ARG="${1:-}"
+if [ -n "$EXPLICIT_ARG" ]; then
+  TARGET_USER="$EXPLICIT_ARG"
+else
+  TARGET_USER="${TARGET_USER:-${SUDO_USER:-}}"
 fi
 
-# ─── Source file check ────────────────────────────────────────────────────────
+[ -n "$TARGET_USER" ] || { err "Could not determine target user. Use: sudo bash $0 [target_user]"; exit 1; }
 
-if [ ! -f "$AUTO_SCRIPT_SRC" ]; then
-  err "Missing: $AUTO_SCRIPT_SRC"
-  err "Make sure you are running this script from the project root:"
-  err "  sudo bash podman/install-podman"
-  exit 1
+if [ "$TARGET_USER" = "root" ]; then
+  USER_HOME="$(getent passwd root | cut -d: -f6)"
+  USER_UID=0
+else
+  USER_INFO="$(getent passwd "$TARGET_USER")" || { err "User '$TARGET_USER' not found."; exit 1; }
+  USER_HOME="$(echo "$USER_INFO" | cut -d: -f6)"
+  USER_UID="$(id -u "$TARGET_USER")"
 fi
 
-if [ ! -f "$AUTO_SERVICE_SRC" ]; then
-  err "Missing: $AUTO_SERVICE_SRC"
-  err "Make sure you are running this script from the project root:"
-  err "  sudo bash podman/install-podman"
-  exit 1
-fi
+info "Target: $TARGET_USER (home=$USER_HOME uid=$USER_UID)"
 
-# ─── Distro detection ─────────────────────────────────────────────────────────
-
-if [ ! -f /etc/os-release ]; then
-  err "Cannot detect distribution: /etc/os-release not found."
-  exit 1
-fi
-
-# Source os-release to get $ID and $ID_LIKE
+[ -f /etc/os-release ] || { err "/etc/os-release missing"; exit 1; }
 . /etc/os-release
 DIST="${ID:-unknown}"
 ID_LIKE="${ID_LIKE:-}"
-info "Detected distro: ID='$DIST' ID_LIKE='$ID_LIKE'"
-
-# ─── Package installation functions ───────────────────────────────────────────
-# Each function installs podman + a compose provider using only the distro's
-# native package manager. No pip, no external repos.
-#
-# Compose strategy:
-#   - Prefer docker-compose (standalone binary) — works as a podman compose provider
-#   - Fall back to podman-compose if docker-compose is unavailable
-#   - If neither is available, exit with instructions for manual pip install
-#
-# We do NOT use pip automatically: pip installs are outside the distro's trust
-# chain and can introduce supply chain risks.
 
 pip_hint() {
   local pkg="$1"
-  echo ""
-  echo "  Your distro does not provide '$pkg' as a native package."
-  echo "  If you want to install it manually via pip, run:"
-  echo ""
-  echo "    python3 -m pip install --user $pkg"
-  echo "    # or system-wide:"
-  echo "    sudo pip3 install $pkg"
-  echo ""
-  echo "  Then re-run this script."
+  cat <<EOF
+
+Your distro does not provide '$pkg' as a native package.
+To install manually via pip (not recommended):
+
+  python3 -m pip install --user $pkg
+  sudo pip3 install $pkg
+
+EOF
 }
 
 install_pkg_debian() {
-  info "Updating apt cache..."
+  info "apt-get update..."
   apt-get update -y
-
-  info "Installing podman..."
   apt-get install -y --no-install-recommends podman
-
-  # docker-compose is available in apt on modern Debian/Ubuntu (22.04+)
   if apt-cache show docker-compose >/dev/null 2>&1; then
-    info "Installing docker-compose from apt..."
     apt-get install -y --no-install-recommends docker-compose
   elif apt-cache show podman-compose >/dev/null 2>&1; then
-    info "docker-compose not in apt; installing podman-compose instead..."
     apt-get install -y --no-install-recommends podman-compose
   else
-    err "Neither docker-compose nor podman-compose is available in apt."
-    pip_hint "docker-compose"
-    exit 1
+    err "No compose package in apt"; pip_hint docker-compose; exit 1
   fi
 }
 
 install_pkg_rhel() {
-  # Modern RHEL/Fedora/Rocky/Alma all use dnf. yum is not supported here.
-  if ! command -v dnf >/dev/null 2>&1; then
-    err "dnf not found. This script requires a modern RHEL-based distro with dnf."
-    err "Old CentOS/RHEL with yum is not supported."
-    exit 1
-  fi
-
-  info "Installing podman via dnf..."
+  command -v dnf >/dev/null 2>&1 || { err "dnf not found"; exit 1; }
   dnf -y install podman
-
-  # Try docker-compose first, then docker-compose-plugin, then podman-compose
   if dnf info docker-compose >/dev/null 2>&1; then
-    info "Installing docker-compose via dnf..."
     dnf -y install docker-compose
   elif dnf info docker-compose-plugin >/dev/null 2>&1; then
-    info "Installing docker-compose-plugin via dnf..."
     dnf -y install docker-compose-plugin
   elif dnf info podman-compose >/dev/null 2>&1; then
-    info "docker-compose not available; installing podman-compose via dnf..."
     dnf -y install podman-compose
   else
-    err "Neither docker-compose nor podman-compose is available via dnf."
-    pip_hint "docker-compose"
-    exit 1
+    err "No compose package in dnf"; pip_hint docker-compose; exit 1
   fi
 }
 
 install_pkg_arch() {
-  info "Installing podman and docker-compose via pacman..."
   pacman -Sy --noconfirm podman
-
   if pacman -Si docker-compose >/dev/null 2>&1; then
     pacman -S --noconfirm docker-compose
   elif pacman -Si podman-compose >/dev/null 2>&1; then
-    info "docker-compose not available; installing podman-compose..."
     pacman -S --noconfirm podman-compose
   else
-    err "Neither docker-compose nor podman-compose is available in pacman."
-    pip_hint "docker-compose"
-    exit 1
+    err "No compose package in pacman"; pip_hint docker-compose; exit 1
   fi
 }
 
 install_pkg_opensuse() {
-  info "Refreshing zypper repos..."
   zypper --non-interactive refresh
-
-  info "Installing podman via zypper..."
   zypper --non-interactive install podman
-
   if zypper info docker-compose >/dev/null 2>&1; then
-    info "Installing docker-compose via zypper..."
     zypper --non-interactive install docker-compose
   elif zypper info podman-compose >/dev/null 2>&1; then
-    info "docker-compose not available; installing podman-compose via zypper..."
     zypper --non-interactive install podman-compose
   else
-    err "Neither docker-compose nor podman-compose is available via zypper."
-    pip_hint "docker-compose"
-    exit 1
+    err "No compose package in zypper"; pip_hint docker-compose; exit 1
   fi
 }
-
-# ─── Distro dispatch ──────────────────────────────────────────────────────────
 
 dispatch_install() {
   case "$DIST" in
-    debian|ubuntu|linuxmint|pop)
-      install_pkg_debian ;;
-    fedora|rhel|centos|rocky|almalinux)
-      install_pkg_rhel ;;
-    arch|manjaro|endeavouros)
-      install_pkg_arch ;;
-    opensuse-leap|opensuse-tumbleweed|opensuse)
-      install_pkg_opensuse ;;
-    *)
-      # Fallback: use ID_LIKE to infer the family
-      if   echo "$ID_LIKE" | grep -qi "debian";          then install_pkg_debian
-      elif echo "$ID_LIKE" | grep -Eiq "rhel|fedora";    then install_pkg_rhel
-      elif echo "$ID_LIKE" | grep -qi "arch";            then install_pkg_arch
-      elif echo "$ID_LIKE" | grep -qi "suse";            then install_pkg_opensuse
-      else
-        err "Unsupported distribution: '$DIST' (ID_LIKE='$ID_LIKE')."
-        err "Please install podman and docker-compose manually, then re-run."
-        exit 1
-      fi
-      ;;
+    debian|ubuntu|linuxmint|pop) install_pkg_debian ;;
+    fedora|rhel|centos|rocky|almalinux) install_pkg_rhel ;;
+    arch|manjaro|endeavouros) install_pkg_arch ;;
+    opensuse*|suse) install_pkg_opensuse ;;
+    *) 
+      if echo "$ID_LIKE" | grep -qi debian; then install_pkg_debian
+      elif echo "$ID_LIKE" | grep -Eiq "rhel|fedora"; then install_pkg_rhel
+      elif echo "$ID_LIKE" | grep -qi arch; then install_pkg_arch
+      elif echo "$ID_LIKE" | grep -qi suse; then install_pkg_opensuse
+      else err "Unsupported distro"; exit 1
+      fi ;;
   esac
 }
 
-# ─── Check if already installed ───────────────────────────────────────────────
-# If both podman and a compose provider are already present, skip package
-# installation entirely and proceed straight to the service setup.
-
 COMPOSE_CMD=""
-if command -v docker-compose >/dev/null 2>&1; then
-  COMPOSE_CMD="docker-compose"
-elif command -v podman-compose >/dev/null 2>&1; then
-  COMPOSE_CMD="podman-compose"
-fi
+if command -v docker-compose >/dev/null 2>&1; then COMPOSE_CMD="docker-compose"
+elif command -v podman-compose >/dev/null 2>&1; then COMPOSE_CMD="podman-compose"; fi
 
 if command -v podman >/dev/null 2>&1 && [ -n "$COMPOSE_CMD" ]; then
-  info "Podman ($(podman --version)) and $COMPOSE_CMD are already installed. Skipping package installation."
+  info "Podman and compose provider present"
 else
-  info "Installing packages..."
+  info "Installing podman + compose provider..."
   dispatch_install
-
-  # Verify podman is now available
-  if ! command -v podman >/dev/null 2>&1; then
-    err "podman not found after installation. Something went wrong."
-    exit 1
-  fi
-  info "Podman installed: $(podman --version)"
 fi
 
-# ─── Determine target user ────────────────────────────────────────────────────
-# The auto-start service runs as a regular user (not root), because:
-#   - podman is rootless by design
-#   - systemd user units live in the user's home
-#   - linger enables the user's systemd session to survive logout
-#
-# When invoked via `sudo`, SUDO_USER is the original caller.
-# If run directly as root (e.g. in a container/CI), we warn and use root,
-# but rootless podman as root is unusual — the admin should be aware.
-
-TARGET_USER="${SUDO_USER:-}"
-
-if [ -z "$TARGET_USER" ] || [ "$TARGET_USER" = "root" ]; then
-  # No sudo wrapper detected — script was run directly as root
-  err "Could not determine a non-root target user."
-  err "Run the script via sudo from the app user's session:"
-  err "  sudo bash podman/install-podman"
-  err ""
-  err "If you intentionally want to install for root, set TARGET_USER explicitly:"
-  err "  sudo TARGET_USER=root bash podman/install-podman"
-  # Allow override via env var for advanced/CI use
-  TARGET_USER="${TARGET_USER:-}"
-  if [ -z "$TARGET_USER" ]; then
-    exit 1
-  fi
+# Prepare target user's dirs BEFORE install to avoid transient root-owned parents
+if [ "$TARGET_USER" = "root" ]; then
+  mkdir -p /root/.local/bin /root/.config/systemd/user
+else
+  mkdir -p "$USER_HOME/.local/bin" "$USER_HOME/.config/systemd/user"
+  chown -R "$TARGET_USER:$TARGET_USER" "$USER_HOME/.local" "$USER_HOME/.config" 2>/dev/null || true
 fi
-
-# Resolve the user's home directory from passwd (works for any username)
-USER_HOME="$(getent passwd "$TARGET_USER" | cut -d: -f6)"
-if [ -z "$USER_HOME" ]; then
-  err "Could not determine home directory for user '$TARGET_USER'."
-  exit 1
-fi
-USER_UID="$(id -u "$TARGET_USER")"
-
-info "Setting up auto-start for user '$TARGET_USER' (home: $USER_HOME)"
-
-# ─── Install auto-start files ─────────────────────────────────────────────────
 
 DEST_SCRIPT="$USER_HOME/$AUTO_SCRIPT_DEST_REL"
 DEST_SERVICE="$USER_HOME/$AUTO_SERVICE_DEST_REL"
 
-info "Installing auto-start script -> $DEST_SCRIPT"
+info "Installing files to $DEST_SCRIPT and $DEST_SERVICE"
 install -Dm755 "$AUTO_SCRIPT_SRC" "$DEST_SCRIPT"
-chown "$TARGET_USER:$TARGET_USER" "$DEST_SCRIPT"
-
-info "Installing systemd user service -> $DEST_SERVICE"
 install -Dm644 "$AUTO_SERVICE_SRC" "$DEST_SERVICE"
-chown "$TARGET_USER:$TARGET_USER" "$DEST_SERVICE"
 
-# Ensure parent dirs are also owned by the target user
-# (install -D creates dirs as root when run under sudo)
-chown "$TARGET_USER:$TARGET_USER" "$(dirname "$DEST_SCRIPT")"
-chown "$TARGET_USER:$TARGET_USER" "$(dirname "$DEST_SERVICE")"
-
-# ─── Enable linger ────────────────────────────────────────────────────────────
-# Linger allows the user's systemd session (and user units) to start at boot
-# and persist without an active login session. Required for rootless podman
-# auto-start to work after reboot.
-
-info "Enabling linger for '$TARGET_USER'..."
-loginctl enable-linger "$TARGET_USER"
-
-# ─── Enable systemd user service ──────────────────────────────────────────────
-# We use XDG_RUNTIME_DIR because systemctl --user needs it to locate the
-# user's dbus/systemd socket. Without it, runuser may fail with
-# "Failed to connect to bus: No such file or directory".
-#
-# Note: If the user's systemd user instance is not yet running (e.g., first boot
-# before user logged in), systemctl --user may fail. We tolerate this non-fatal
-# failure and advise the user to check later.
-
-XDG_RUNTIME_DIR_PATH="/run/user/$USER_UID"
-
-info "Reloading systemd user daemon and enabling podman-auto-start.service..."
-if runuser -l "$TARGET_USER" -c "
-  export XDG_RUNTIME_DIR='$XDG_RUNTIME_DIR_PATH'
-  systemctl --user daemon-reload
-  systemctl --user enable --now podman-auto-start.service
-"; then
-  info "systemctl --user succeeded."
+# Fix ownership of XDG dirs and installed files (non-root targets)
+if [ "$TARGET_USER" != "root" ]; then
+  for d in .config .local .cache; do
+    [ -e "$USER_HOME/$d" ] && chown -R "$TARGET_USER:$TARGET_USER" "$USER_HOME/$d" 2>/dev/null || true
+  done
+  chown "$TARGET_USER:$TARGET_USER" "$DEST_SCRIPT" "$DEST_SERVICE" 2>/dev/null || true
 else
-  err "systemctl --user failed (possibly because user systemd instance not yet running)."
-  echo "  This is non-fatal. The service will start automatically after the user logs in."
-  echo "  To verify later, run as $TARGET_USER:"
-  echo "    systemctl --user status podman-auto-start.service"
+  chown root:root "$DEST_SCRIPT" "$DEST_SERVICE" 2>/dev/null || true
 fi
 
-# ─── Done ─────────────────────────────────────────────────────────────────────
+# Ensure home ownership but don't change perms
+[ -d "$USER_HOME" ] && chown "$TARGET_USER:$TARGET_USER" "$USER_HOME" 2>/dev/null || true
 
-info "Installation complete."
-echo ""
-echo "  User:    $TARGET_USER"
-echo "  Service: podman-auto-start.service (systemd user unit)"
-echo "  Script:  $DEST_SCRIPT"
-echo ""
-echo "  Useful commands (run as $TARGET_USER):"
-echo "    systemctl --user status podman-auto-start.service"
-echo "    tail -f $USER_HOME/.local/share/podman-auto-start-spasm.log"
-echo ""
-echo "  To disable:"
-echo "    systemctl --user disable --now podman-auto-start.service"
-echo "    sudo loginctl disable-linger $TARGET_USER"
-echo ""
+# Enable linger and user units (non-root only)
+if [ "$TARGET_USER" != "root" ]; then
+  info "Enabling linger for $TARGET_USER"
+  loginctl enable-linger "$TARGET_USER" || true
+
+  XDG_RUNTIME_DIR="/run/user/$USER_UID"
+  run_user() { local cmd="$1"; sudo -u "$TARGET_USER" env XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" bash -lc "$cmd"; }
+
+  info "Reloading user systemd and enabling podman.socket/service + auto-start"
+  if run_user "systemctl --user daemon-reload \
+    && systemctl --user enable --now podman.socket || true \
+    && systemctl --user enable --now podman.service || true \
+    && systemctl --user enable --now podman-auto-start-spasm.service || true"; then
+    info "User systemctl commands executed"
+  else
+    err "User systemctl commands failed (user systemd might not be running)."
+    echo "Run as $TARGET_USER after login:"
+    echo "  systemctl --user status podman.socket podman.service podman-auto-start-spasm.service"
+  fi
+else
+  info "Target is root: skipping user systemd configuration"
+fi
+
+info "Done for $TARGET_USER"
+cat <<EOF
+
+User:    $TARGET_USER
+Service: podman-auto-start-spasm.service
+Script:  $DEST_SCRIPT
+
+If socket didn't start automatically, log in as the target user or run:
+  sudo -u $TARGET_USER env XDG_RUNTIME_DIR="/run/user/$USER_UID" systemctl --user enable --now podman.socket
+  sudo -u $TARGET_USER env XDG_RUNTIME_DIR="/run/user/$USER_UID" systemctl --user start podman.service
+
+To verify (as root):
+  sudo -u $TARGET_USER env XDG_RUNTIME_DIR="/run/user/$USER_UID" systemctl --user status podman.socket podman.service podman-auto-start-spasm.service
+  ls -l /run/user/$USER_UID/podman/podman.sock || true
+  sudo -u $TARGET_USER env XDG_RUNTIME_DIR="/run/user/$USER_UID" podman info || true
+
+EOF
 
 exit 0
