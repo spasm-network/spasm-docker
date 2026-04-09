@@ -171,18 +171,55 @@ if [ "$TARGET_USER" != "root" ]; then
   loginctl enable-linger "$TARGET_USER" || true
 
   XDG_RUNTIME_DIR="/run/user/$USER_UID"
+
+  # Helper to run a command as the target user with XDG_RUNTIME_DIR set.
+  # We attempt to start the user systemd instance via "machinectl --user" fallback:
   run_user() { local cmd="$1"; sudo -u "$TARGET_USER" env XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" bash -lc "$cmd"; }
 
   info "Reloading user systemd and enabling podman.socket/service + auto-start"
-  if run_user "systemctl --user daemon-reload \
+
+  # Two-phase approach:
+  # 1) Try to talk to the user's systemd (works if user instance already running).
+  # 2) If that fails, attempt to start a transient user systemd instance via "systemd-run --user --scope"
+  #    which will create the user bus and allow enabling sockets/services without an interactive login.
+  #
+  # Note: systemd-run may not be available in all environments; we try and fall back to instructing the admin.
+  set +e
+  # First, try the normal enable-now sequence.
+  run_user "systemctl --user daemon-reload \
     && systemctl --user enable --now podman.socket || true \
     && systemctl --user enable --now podman.service || true \
-    && systemctl --user enable --now podman-auto-start-spasm.service || true"; then
+    && systemctl --user enable --now podman-auto-start-spasm.service || true"
+  rc=$?
+  set -e
+
+  if [ $rc -eq 0 ]; then
     info "User systemctl commands executed"
+    # Check if podman socket exists; if not, try transient approach
+    if [ ! -S "$XDG_RUNTIME_DIR/podman/podman.sock" ]; then
+      info "Podman socket not present; attempting transient user scope to initialize user bus"
+      set +e
+      # Try to create a transient user scope which should spin up the user bus for a moment.
+      if command -v systemd-run >/dev/null 2>&1; then
+        run_user "systemd-run --user --scope /bin/true" || true
+        # Retry enabling/starting services after transient run
+        run_user "systemctl --user daemon-reload \
+          && systemctl --user enable --now podman.socket || true \
+          && systemctl --user enable --now podman.service || true \
+          && systemctl --user enable --now podman-auto-start-spasm.service || true" || true
+      fi
+      set -e
+    fi
   else
     err "User systemctl commands failed (user systemd might not be running)."
-    echo "Run as $TARGET_USER after login:"
-    echo "  systemctl --user status podman.socket podman.service podman-auto-start-spasm.service"
+    echo "Run as $TARGET_USER after login or run the commands below as root to attempt transient start:"
+    echo "  sudo -u $TARGET_USER env XDG_RUNTIME_DIR=\"$XDG_RUNTIME_DIR\" systemctl --user daemon-reload"
+    echo "  sudo -u $TARGET_USER env XDG_RUNTIME_DIR=\"$XDG_RUNTIME_DIR\" systemctl --user enable --now podman.socket podman.service podman-auto-start-spasm.service"
+    if command -v systemd-run >/dev/null 2>&1; then
+      echo "Or try (as root) to transiently initialize the user bus and retry enabling:"
+      echo "  sudo -u $TARGET_USER env XDG_RUNTIME_DIR=\"$XDG_RUNTIME_DIR\" systemd-run --user --scope /bin/true"
+      echo "  sudo -u $TARGET_USER env XDG_RUNTIME_DIR=\"$XDG_RUNTIME_DIR\" systemctl --user enable --now podman.socket podman.service podman-auto-start-spasm.service"
+    fi
   fi
 else
   info "Target is root: skipping user systemd configuration"
