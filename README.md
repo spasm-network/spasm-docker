@@ -4,7 +4,7 @@ Mirrors: [Forgejo](https://git.spasm.network/spasm-network/spasm-docker) [Codebe
 
 Launch [Spasm](https://spasm.network) under three minutes.
 
-The entire stack runs in isolated containers without exposing ports, routing traffic through a proxy container. Frontend and db stay on an internal network, backend uses external for federation. It's secure, self-contained, and easy to deploy.
+The entire stack runs in isolated containers without exposing ports, routing traffic through a proxy container. Frontend and db stay on an internal network, backend uses external for federation. It's secure, self-contained, and easy to deploy. You can also [verify](gpg/README.md) GPG signatures of all git commits.
 
 This repo is for deploying Spasm on existing servers. For new server setups, use [spasm-ansible](https://github.com/spasm-network/spasm-ansible) repo to automate everything from hardening to deployment with just one script.
 
