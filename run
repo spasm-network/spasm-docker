@@ -134,8 +134,8 @@ case "$COMMAND" in
     backup="${1:-}"
     require_backup "$backup"
     bash scripts/database-backup.sh
-    bash scripts/database-restore.sh "$backup"
     run_compose down
+    bash scripts/database-restore.sh "$backup"
     run_compose up -d --remove-orphans
     ;;
 
