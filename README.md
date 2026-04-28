@@ -1,5 +1,7 @@
 ## Spasm forum docker/podman deployment
 
+Mirrors: [Forgejo](https://git.spasm.network/spasm-network/spasm-docker) [Codeberg](https://codeberg.org/spasm-network/spasm-docker) [Github](https://github.com/spasm-network/spasm-docker)
+
 Launch [Spasm](https://spasm.network) under three minutes.
 
 The entire stack runs in isolated containers without exposing ports, routing traffic through a proxy container. Frontend and db stay on an internal network, backend uses external for federation. It's secure, self-contained, and easy to deploy.
