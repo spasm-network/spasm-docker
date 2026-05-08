@@ -63,7 +63,7 @@ bash run update
 
 # or manual:
 git pull --ff-only
-docker compose pull && docker compose up -d
+docker compose pull && docker compose up -d --force-recreate
 ```
 
 #### Database management

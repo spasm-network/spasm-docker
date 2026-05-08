@@ -118,8 +118,8 @@ case "$COMMAND" in
   update)
     git fetch origin
     git pull --ff-only
-    run_compose pull --ignore-pull-failures || true
-    run_compose up -d --remove-orphans
+    run_compose pull || true
+    run_compose up -d --remove-orphans --force-recreate
     ;;
 
   db-backup)
