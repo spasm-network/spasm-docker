@@ -4,9 +4,9 @@ Mirrors: [Forgejo](https://git.spasm.network/spasm-network/spasm-docker) [Codebe
 
 Launch [Spasm](https://spasm.network) under three minutes.
 
-The entire stack runs in isolated containers without exposing ports, routing traffic through a proxy container. Frontend and db stay on an internal network, backend uses external for federation. It's secure, self-contained, and easy to deploy. You can also [verify](gpg/README.md) GPG signatures of all git commits.
+The entire stack runs in isolated containers without exposing ports, routing traffic through a proxy container. Frontend and db stay on an internal network, backend uses external ones for federation. It's secure, self-contained, and easy to deploy. You can also [verify](gpg/README.md) GPG signatures of all git commits.
 
-This repo is for deploying Spasm on existing servers. For new server setups, use [spasm-ansible](https://github.com/spasm-network/spasm-ansible) repo to automate everything from hardening to deployment with just one script.
+This repo is for deploying Spasm on existing servers along with other software. For new server, dedicated for Spasm, use [spasm-ansible](https://github.com/spasm-network/spasm-ansible) repo to automate everything from system hardening to deployment with just one script.
 
 ### Prerequisites
 
@@ -27,13 +27,13 @@ nano .env
 docker compose up -d
 ```
 
-The app listens on port 33333 by default (you can change HOST_PORT in .env).
+The app listens on port 33333 by default (you can change HOST_PORT in spasm-docker/.env file).
 
 You can verify the app is running with `curl http://127.0.0.1:33333/api/health`
 
 ### Make your forum public
 
-Prereqs: [DNS points](./config/nginx/DNS.md) to this server IP; firewall allows ports 80 and 443.
+Prerequisites: [DNS points](./config/nginx/DNS.md) to the server IP and firewall allows ports 80 and 443.
 
 #### Automatic setup
 
